@@ -1,0 +1,151 @@
+// =====================================================
+// 0) RESET  (careful: deletes everything)
+// =====================================================
+MATCH (n) DETACH DELETE n;
+CALL apoc.schema.assert({}, {}, true);
+
+// =====================================================
+// 1) SCHEMA
+// =====================================================
+CREATE CONSTRAINT account_id IF NOT EXISTS
+FOR (a:Account) REQUIRE a.id IS UNIQUE;
+
+CREATE INDEX sm_key IF NOT EXISTS
+FOR (s:SM) ON (s.accId, s.seg, s.level, s.phase);
+
+// =====================================================
+// 2) BASE GRAPH: accounts + transfers (toy data)
+// =====================================================
+UNWIND range(1,10) AS i
+CREATE (:Account {id: i});
+
+MATCH (a:Account)
+WITH collect(a) AS nodes, size(collect(a)) AS n
+UNWIND range(1,30) AS k
+WITH nodes, n,
+     toInteger(1 + rand()*n) AS i,
+     toInteger(1 + rand()*n) AS j
+WITH nodes[i-1] AS u, nodes[j-1] AS v
+WHERE u <> v
+CREATE (u)-[:TRANSFER {
+  amount: toInteger(1 + rand()*1000),
+  ts:     datetime("2024-01-01") + duration({days: toInteger(rand()*365)})
+}]->(v);
+
+// =====================================================
+// 3) BASELINE MOTIF QUERY (↑ then ↓) — CORRECT VERSION
+//    UP inside seg1, strict drop at split, DOWN inside seg2
+// =====================================================
+MATCH p = (s:Account)-[:TRANSFER*]->(t:Account)
+WITH s, t, [r IN relationships(p) | r.amount] AS amts
+WHERE size(amts) >= 2
+WITH s, t, amts, range(1, size(amts)-1) AS splits
+UNWIND splits AS k
+WITH s, t, amts, k
+WHERE ALL(i IN range(1, k-1)                WHERE amts[i-1] < amts[i])   // UP
+  AND amts[k-1] > amts[k]                                                  // boundary ↓
+  AND ALL(i IN range(k+1, size(amts)-1)     WHERE amts[i-1] > amts[i])   // DOWN
+RETURN DISTINCT s.id AS source, t.id AS target, amts
+ORDER BY source, target;
+
+// =====================================================
+// 4) PATTERNLIFT BUILD (motif = ['UP','DOWN'])
+//    Nodes:  (:SM {accId, seg, level, phase ∈ {'pre','post'}, dir})
+//    Edges:  :M  within a segment (enforces ↑/↓; lands on 'post')
+//            :SW from seg s 'post' → seg s+1 'pre' (carries last level)
+// =====================================================
+
+// 4.0 Remove any previous PatternLift
+MATCH (n:SM) DETACH DELETE n;
+
+// 4.1 Create SM nodes (two phases) per (account, segment, level)
+WITH ['UP','DOWN'] AS motif
+MATCH ()-[e:TRANSFER]->()
+WITH motif, coalesce(max(e.amount),0) + 1 AS TOP
+UNWIND range(1, size(motif)) AS s
+WITH motif, TOP, s, motif[s-1] AS dir
+MATCH (v:Account)
+OPTIONAL MATCH (:Account)-[e:TRANSFER]->(v)
+WITH TOP, s, dir, v, collect(DISTINCT e.amount) AS inAmts
+WITH TOP, s, dir, v,
+     (CASE WHEN dir='UP' THEN [-1] ELSE [TOP] END) +
+     [a IN inAmts WHERE a IS NOT NULL] AS levels
+UNWIND levels AS level
+MERGE (:SM {accId:v.id, seg:s, level:level, phase:'pre',  dir:dir})
+MERGE (:SM {accId:v.id, seg:s, level:level, phase:'post', dir:dir});
+
+// 4.2 Motif edges :M (compile inequalities; tag baseRelId; land on 'post')
+WITH ['UP','DOWN'] AS motif
+MATCH (u:Account)-[e:TRANSFER]->(v:Account)
+WITH motif, e, u, v, e.amount AS j, e.ts AS ts, elementId(e) AS rid
+UNWIND range(1, size(motif)) AS s
+WITH e,u,v,j,ts,rid,s, motif[s-1] AS dir
+MATCH (su:SM {accId:u.id, seg:s})
+WHERE (dir='UP'   AND su.level < j)
+   OR (dir='DOWN' AND su.level > j)
+MATCH (sv:SM {accId:v.id, seg:s, level:j, phase:'post'})
+MERGE (su)-[m:M {seg:s, amount:j, baseRelId:rid}]->(sv)
+ON CREATE SET m.ts = ts;
+
+// 4.3 Segment switches :SW — only from 'post' (forces non-empty segments)
+WITH ['UP','DOWN'] AS motif
+UNWIND range(1, size(motif)-1) AS s
+MATCH (from:SM {seg:s, phase:'post'})
+MATCH (to:SM   {seg:s+1, phase:'pre', accId:from.accId, level:from.level})
+MERGE (from)-[:SW {fromSeg:s, toSeg:s+1}]->(to);
+
+// =====================================================
+// 5) RELATIONSHIP-SIMPLE VARIANT (to match baseline semantics)
+//     Add 1 small filter to forbid reusing the same base edge.
+// =====================================================
+MATCH p = (start:SM {seg:1, phase:'pre',  level:-1})
+          -[:M|SW*]->
+          (x:SM     {seg:2, phase:'post'})
+WITH start, x, p,
+     [r IN relationships(p) WHERE type(r)='M' | r.baseRelId] AS rids
+WHERE size(rids) = size(apoc.coll.toSet(rids))   // uniqueness on base edges
+RETURN start.accId AS source,
+       x.accId     AS target,
+       [r IN relationships(p) WHERE type(r)='M' | r.amount] AS amts,
+       length(p)   AS hops
+ORDER BY source, target;
+
+// =====================================================
+// 6) SANITY CHECK — baseline (↑↓) vs lifted (↑↓)
+//     Uses the relationship-simple lifted variant to align semantics.
+//     Should return 0 rows.
+// =====================================================
+CALL {
+  // Baseline set B (↑ then ↓) — with boundary guard
+  MATCH p = (s:Account)-[:TRANSFER*]->(t:Account)
+  WITH s, t, [r IN relationships(p) | r.amount] AS amts
+  WHERE size(amts) >= 2
+  WITH s, t, amts, range(1, size(amts)-1) AS splits
+  UNWIND splits AS k
+  WITH s, t, amts, k
+  WHERE ALL(i IN range(1, k-1)                WHERE amts[i-1] < amts[i])
+    AND amts[k-1] > amts[k]
+    AND ALL(i IN range(k+1, size(amts)-1)     WHERE amts[i-1] > amts[i])
+  RETURN collect({source:s.id, target:t.id, amts:amts}) AS Bset
+}
+
+CALL {
+  // Lifted set L (↑ then ↓) — relationship-simple via baseRelId uniqueness
+  MATCH p = (start:SM {seg:1, phase:'pre', level:-1})
+            -[:M|SW*]->
+            (x:SM     {seg:2, phase:'post'})
+  WITH start, x, p,
+       [r IN relationships(p) WHERE type(r)='M' | r.baseRelId] AS rids,
+       [r IN relationships(p) WHERE type(r)='M' | r.amount]    AS amts
+  WHERE size(rids) = size(apoc.coll.toSet(rids))
+  WITH DISTINCT start.accId AS source, x.accId AS target, amts
+  RETURN collect({source:source, target:target, amts:amts}) AS Lset
+}
+
+WITH Bset, Lset
+WITH [x IN Bset WHERE NOT x IN Lset] AS BminusL,
+     [x IN Lset WHERE NOT x IN Bset] AS LminusB
+UNWIND (BminusL + LminusB) AS d
+RETURN CASE WHEN d IN BminusL THEN 'BASE_MINUS_LIFT' ELSE 'LIFT_MINUS_BASE' END AS which,
+       d.source AS source, d.target AS target, d.amts AS amts
+
