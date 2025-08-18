@@ -1,0 +1,164 @@
+"""
+StageLift experiment visuals
+- Requires: numpy, pandas, matplotlib
+- Produces: CSVs + 6 PNGs (latency, build time, speedup) for PatternLift and OrderMotif
+- No seaborn. One chart per figure. Default matplotlib colors.
+"""
+
+import os
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# -----------------------------
+# Output paths
+# -----------------------------
+OUTDIR = Path("figures")
+OUTDIR.mkdir(parents=True, exist_ok=True)
+
+# -----------------------------
+# 1) Data: PatternLift (Increasing → Decreasing)
+# -----------------------------
+# Columns: K, orig_create_ms, lifted_build_ms, baseline_query_ms, lifted_query_ms
+patternlift_rows = [
+    (10, 104,  754,  217, 218),
+    (20,   6,  755,  219, 105),
+    (30,   7, 1095, 5849, 131),
+    # Heavier run (baseline timeout)
+]
+patternlift = pd.DataFrame(patternlift_rows, columns=[
+    "K", "orig_create_ms", "lifted_build_ms", "baseline_query_ms", "lifted_query_ms"
+])
+patternlift["speedup_baseline_over_lifted"] = patternlift["baseline_query_ms"] / patternlift["lifted_query_ms"]
+
+# -----------------------------
+# 2) Data: OrderMotif StageLift (Order motif ⟨UP, DOWN⟩)
+# -----------------------------
+ordermotif_rows = [
+    (10,  90,  283,  132,   76),
+    (20,  93,  414,  104,   90),
+    (30,  84,  492, 1855,  171),
+    # Heavier run (baseline timeout)
+    (40, np.nan, 1286,  np.nan, 1028),
+]
+ordermotif = pd.DataFrame(ordermotif_rows, columns=[
+    "K", "orig_create_ms", "lifted_build_ms", "baseline_query_ms", "lifted_query_ms"
+])
+ordermotif["speedup_baseline_over_lifted"] = ordermotif["baseline_query_ms"] / ordermotif["lifted_query_ms"]
+
+# -----------------------------
+# Helpers
+# -----------------------------
+def annotate_timeouts(ax, df, xcol="K", ycol="baseline_query_ms", label="baseline timeout"):
+    """Annotate points where baseline is NaN (i.e., timed out)."""
+    # Trigger autoscale to get reasonable y-limits before annotating
+    ax.relim(); ax.autoscale()
+    ymin, ymax = ax.get_ylim()
+    y_text = ymax * 0.85 if ymax > 0 else 1.0
+    for _, row in df.iterrows():
+        if pd.isna(row[ycol]):
+            ax.annotate(label, xy=(row[xcol], y_text), xytext=(row[xcol], y_text),
+                        rotation=90, ha="center", va="bottom")
+
+def savefig(fig, name: str):
+    fig.tight_layout()
+    out = OUTDIR / name
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    print(f"Saved: {out}")
+
+# -----------------------------
+# 3) PatternLift plots
+# -----------------------------
+# 3.1 Query latency vs K (log-y)
+fig = plt.figure(figsize=(7, 5))
+ax = plt.gca()
+ax.plot(patternlift["K"], patternlift["baseline_query_ms"], marker="o", label="Baseline (original)")
+ax.plot(patternlift["K"], patternlift["lifted_query_ms"],   marker="s", label="Lifted (PatternLift)")
+ax.set_xlabel("# TRANSFER edges (K)")
+ax.set_ylabel("Query latency (ms)")
+ax.set_title("PatternLift: Query Latency vs K")
+ax.set_yscale("log")
+ax.grid(True, which="both", linewidth=0.5, alpha=0.6)
+ax.legend()
+annotate_timeouts(ax, patternlift, "K", "baseline_query_ms")
+savefig(fig, "patternlift_query_latency.png")
+plt.show()
+
+# 3.2 Build/Create time vs K
+fig = plt.figure(figsize=(7, 5))
+ax = plt.gca()
+ax.plot(patternlift["K"], patternlift["orig_create_ms"], marker="o", label="Original graph create")
+ax.plot(patternlift["K"], patternlift["lifted_build_ms"], marker="s", label="Lifted build (PatternLift)")
+ax.set_xlabel("# TRANSFER edges (K)")
+ax.set_ylabel("Build/Create time (ms)")
+ax.set_title("PatternLift: Build/Create Time vs K")
+ax.grid(True, linewidth=0.5, alpha=0.6)
+ax.legend()
+savefig(fig, "patternlift_build_time.png")
+plt.show()
+
+# 3.3 Speedup vs K (baseline / lifted)
+fig = plt.figure(figsize=(7, 5))
+ax = plt.gca()
+ax.plot(patternlift["K"], patternlift["speedup_baseline_over_lifted"], marker="o",
+        label="Speedup (baseline / lifted)")
+ax.set_xlabel("# TRANSFER edges (K)")
+ax.set_ylabel("Speedup (×)")
+ax.set_title("PatternLift: Speedup vs K")
+ax.grid(True, linewidth=0.5, alpha=0.6)
+ax.legend()
+savefig(fig, "patternlift_speedup.png")
+plt.show()
+
+# -----------------------------
+# 4) OrderMotif plots
+# -----------------------------
+# 4.1 Query latency vs K (log-y)
+fig = plt.figure(figsize=(7, 5))
+ax = plt.gca()
+ax.plot(ordermotif["K"], ordermotif["baseline_query_ms"], marker="o", label="Baseline (original)")
+ax.plot(ordermotif["K"], ordermotif["lifted_query_ms"],   marker="s", label="Lifted (OrderMotif)")
+ax.set_xlabel("# TRANSFER edges (K)")
+ax.set_ylabel("Query latency (ms)")
+ax.set_title("OrderMotif: Query Latency vs K")
+ax.set_yscale("log")
+ax.grid(True, which="both", linewidth=0.5, alpha=0.6)
+ax.legend()
+annotate_timeouts(ax, ordermotif, "K", "baseline_query_ms")
+savefig(fig, "ordermotif_query_latency.png")
+plt.show()
+
+# 4.2 Build/Create time vs K
+fig = plt.figure(figsize=(7, 5))
+ax = plt.gca()
+ax.plot(ordermotif["K"], ordermotif["orig_create_ms"], marker="o", label="Original graph create")
+ax.plot(ordermotif["K"], ordermotif["lifted_build_ms"], marker="s", label="Lifted build (OrderMotif)")
+ax.set_xlabel("# TRANSFER edges (K)")
+ax.set_ylabel("Build/Create time (ms)")
+ax.set_title("OrderMotif: Build/Create Time vs K")
+ax.grid(True, linewidth=0.5, alpha=0.6)
+ax.legend()
+savefig(fig, "ordermotif_build_time.png")
+plt.show()
+
+# 4.3 Speedup vs K (baseline / lifted)
+fig = plt.figure(figsize=(7, 5))
+ax = plt.gca()
+ax.plot(ordermotif["K"], ordermotif["speedup_baseline_over_lifted"], marker="o",
+        label="Speedup (baseline / lifted)")
+ax.set_xlabel("# TRANSFER edges (K)")
+ax.set_ylabel("Speedup (×)")
+ax.set_title("OrderMotif: Speedup vs K")
+ax.grid(True, linewidth=0.5, alpha=0.6)
+ax.legend()
+savefig(fig, "ordermotif_speedup.png")
+plt.show()
+
+# -----------------------------
+# 5) Save CSVs
+# -----------------------------
+patternlift.to_csv(OUTDIR / "patternlift_results.csv", index=False)
+ordermotif.to_csv(OUTDIR / "ordermotif_results.csv", index=False)
+print("\nSaved CSVs to:", OUTDIR.resolve())
+print("Files:", sorted(p.name for p in OUTDIR.iterdir()))
