@@ -36,7 +36,7 @@ WITH nodes[i-1] AS u, nodes[j-1] AS v, k
 WHERE u <> v
 CREATE (u)-[:TRANSFER {
   amount: toInteger(1 + rand()*1000),
-  ts: datetime("2024-01-01") + duration({days: toInteger(rand()*365)})
+  ts: datetime("2025-01-01") + duration({days: toInteger(rand()*365)})
 }]->(v);
 
 // =====================================================
@@ -82,10 +82,42 @@ MERGE (su)-[le:TRANSFER_LIFT {amount: j}]->(sv)
 // =====================================================
 // 5) LIFTED QUERY (simplified)
 // Now the query is plain reachability from (level -1) over TRANSFER_LIFT,
-// because the increase guard is baked into the edges.
+// because the increased guard is baked into the edges.
 // =====================================================
 MATCH (start:Stage {level: -1})
 MATCH p = (start)-[:TRANSFER_LIFT*]->(x:Stage)
 RETURN start.accId AS source, x.accId AS target, length(p) AS hops,
        [r IN relationships(p) | r.amount] AS amts
 ORDER BY hops DESC, target
+
+
+// =====================================================
+// 6) Sanity check - exact (s,t,amounts)
+//     If both counts are 0 → PASS
+// =====================================================
+CALL {
+  // Original graph (include the amount sequence)
+  MATCH p = (s:Account)-[:TRANSFER*]->(t:Account)
+  WITH s, t, [r IN relationships(p) | r.amount] AS amts
+  WHERE size(amts) > 0
+    AND ALL(i IN range(1, size(amts)-1) WHERE amts[i-1] < amts[i])
+  RETURN DISTINCT s.id AS s, t.id AS t, amts
+}
+WITH collect({s:s, t:t, amts:amts}) AS orig_seq
+CALL {
+  // Lifted graph (amount sequence comes from TRANSFER_LIFT edges)
+  MATCH (start:Stage {level:-1})
+  MATCH p = (start)-[:TRANSFER_LIFT*]->(x:Stage)
+  WITH start, x, [r IN relationships(p) | r.amount] AS amts
+  RETURN DISTINCT start.accId AS s, x.accId AS t, amts
+}
+WITH orig_seq, collect({s:s, t:t, amts:amts}) AS lift_seq
+WITH
+  [row IN orig_seq WHERE NOT row IN lift_seq] AS missing_in_lift,
+  [row IN lift_seq WHERE NOT row IN orig_seq] AS extra_in_lift
+RETURN
+  size(missing_in_lift) AS missing_sequences,
+  size(extra_in_lift)   AS extra_sequences,
+  (size(missing_in_lift)=0 AND size(extra_in_lift)=0) AS sequences_ok,
+  missing_in_lift[0..5] AS sample_missing_sequences,
+  extra_in_lift[0..5]   AS sample_extra_sequences;
