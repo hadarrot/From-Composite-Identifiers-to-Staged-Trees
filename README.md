@@ -7,7 +7,7 @@ Compile strict-order guards *into* the graph and compare query latency vs. check
 
 ## What’s here
 - Cypher to: reset DB, create base graph, build StageLift, and run both queries
-- A tiny parameter sweep with K ∈ {10, 20, 30} background transfers
+- A parameter sweep with K ∈ {10, 20, 30} background transfers
 - Preliminary timings and speedups
 
 ## Requirements
