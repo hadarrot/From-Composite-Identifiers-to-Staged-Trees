@@ -134,7 +134,7 @@ ax.plot(stagelift["K"], stagelift["lifted_total_ms"],
 prettify_axes(ax,
               xlabel="# TRANSFER edges (K)",
               ylabel="Latency (ms)",
-              title="Baseline Query vs Lifted TOTAL (build + query)",
+              title="Baseline Query vs StageLift (build + query)",
               logy=True)
 ax.legend()
 annotate_timeouts(ax, stagelift, "K", "baseline_query_ms", label="")
