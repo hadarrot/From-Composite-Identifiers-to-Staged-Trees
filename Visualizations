@@ -90,41 +90,55 @@ def savefig(fig, name: str):
     print(f"Saved: {out}")
 
 # -----------------------------
-# StageLift data (100 accounts)
+# StageLift data (100 accounts) — UPDATED WITH NEW RESULTS
 # Columns: K, orig_create_ms, lifted_build_ms, baseline_query_ms (NaN if timeout), lifted_query_ms
 # -----------------------------
 stagelift_rows = [
-    ( 50,  525,  705,   211,    100),
-    (100,  133,  490,   316,     90),
-    (150,  137,  996, 43248,    124),
-    (200,  299, 1022,   np.nan, 152),
-    (250,  193,  485,   np.nan, 101),
-    (300,  153,  447,   np.nan,  77),
+    ( 50, 525,  705,   211,   100),
+    ( 75, 289,  391,   173,    87),
+    (100, 133,  490,   316,    90),
+    (125, 146,  325,   444,    64),
+    (150, 137,  996, 43248,   124),
+    (175, 137, 1155,  8953,   111),
+    (200, 299, 1022,    np.nan, 152),
+    (225, 263,  919,    np.nan, 122),
+    (250, 193,  485,    np.nan, 101),
+    (275, 478,  713,    np.nan, 296),
+    (300, 153,  447,    np.nan,  77),
+    (325, 189,  442,    np.nan, 102),
+    (350, 224,  480,    np.nan, 182),
+    (375, 117,  309,    np.nan,  79),
+    (400, 108,  213,    np.nan, 107),
 ]
 stagelift = pd.DataFrame(stagelift_rows, columns=[
     "K", "orig_create_ms", "lifted_build_ms", "baseline_query_ms", "lifted_query_ms"
 ])
-stagelift["speedup_baseline_over_lifted"] = (
-    stagelift["baseline_query_ms"] / stagelift["lifted_query_ms"]
+
+# ---- NEW: lifted total = build + query ----
+stagelift["lifted_total_ms"] = stagelift["lifted_build_ms"] + stagelift["lifted_query_ms"]
+
+# ---- NEW: speedup using lifted TOTAL (baseline / lifted_total) ----
+stagelift["speedup_baseline_over_lifted_total"] = (
+    stagelift["baseline_query_ms"] / stagelift["lifted_total_ms"]
 )
 
 # -----------------------------
-# 1) Query latency vs K (log-y)
+# 1) Baseline query vs Lifted TOTAL (log-y)
 # -----------------------------
 fig = plt.figure(figsize=(7.4, 5.2))
 ax = plt.gca()
 ax.plot(stagelift["K"], stagelift["baseline_query_ms"],
-        marker="o", linewidth=2.2, label="Baseline (original)", color=PALETTE["baseline"])
-ax.plot(stagelift["K"], stagelift["lifted_query_ms"],
-        marker="s", linewidth=2.2, label="Lifted (StageLift)", color=PALETTE["lifted"])
+        marker="o", linewidth=2.2, label="Baseline (original) query", color=PALETTE["baseline"])
+ax.plot(stagelift["K"], stagelift["lifted_total_ms"],
+        marker="s", linewidth=2.2, label="Lifted TOTAL (build + query)", color=PALETTE["lifted"])
 prettify_axes(ax,
               xlabel="# TRANSFER edges (K)",
-              ylabel="Query latency (ms)",
-              title="StageLift: Query Latency vs K",
+              ylabel="Latency (ms)",
+              title="Baseline Query vs Lifted TOTAL (build + query)",
               logy=True)
 ax.legend()
-annotate_timeouts(ax, stagelift, "K", "baseline_query_ms")
-savefig(fig, "stagelift_query_latency.png")
+annotate_timeouts(ax, stagelift, "K", "baseline_query_ms", label="")
+savefig(fig, "stagelift_total_vs_baseline.png")
 plt.show()
 
 # -----------------------------
@@ -146,23 +160,23 @@ savefig(fig, "stagelift_build_time.png")
 plt.show()
 
 # -----------------------------
-# 3) Speedup vs K (baseline / lifted)
+# 3) Speedup vs K (baseline / lifted TOTAL)
 # -----------------------------
 fig = plt.figure(figsize=(7.4, 5.2))
 ax = plt.gca()
-ax.plot(stagelift["K"], stagelift["speedup_baseline_over_lifted"],
-        marker="D", linewidth=2.2, label="Speedup (baseline / lifted)", color=PALETTE["speedup"])
+ax.plot(stagelift["K"], stagelift["speedup_baseline_over_lifted_total"],
+        marker="D", linewidth=2.2, label="Speedup (baseline / lifted TOTAL)", color=PALETTE["speedup"])
 prettify_axes(ax,
               xlabel="# TRANSFER edges (K)",
               ylabel="Speedup (×)",
-              title="StageLift: Speedup vs K",
+              title="Speedup vs K (baseline / lifted TOTAL)",
               logy=False)
 ax.legend()
 savefig(fig, "stagelift_speedup.png")
 plt.show()
 
 # -----------------------------
-# Save CSV
+# Save CSV (includes lifted_total_ms and new speedup)
 # -----------------------------
 stagelift.to_csv(OUTDIR / "stagelift_results.csv", index=False)
 
