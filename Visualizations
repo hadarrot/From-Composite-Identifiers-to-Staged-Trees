@@ -1,7 +1,7 @@
 """
-Leveled-graph experiment visuals
+Leveled-graph experiment visuals (single chart)
 - Requires: numpy, pandas, matplotlib
-- Produces: CSV + 3 PNGs (query latency, build time, speedup) for leveled graph
+- Produces: 1 PNG (baseline vs leveled TOTAL) from the NEW results
 - No seaborn. One chart per figure. Custom palette (avoids blue/orange).
 """
 
@@ -23,11 +23,8 @@ OUTDIR.mkdir(parents=True, exist_ok=True)
 # Global style (no blue/orange)
 # -----------------------------
 PALETTE = {
-    "baseline":        "#7A1F1F",  # deep maroon
-    "leveled":         "#2E7D32",  # forest green
-    "orig_create":     "#6D4C41",  # warm brown
-    "leveled_build":   "#37474F",  # charcoal
-    "speedup":         "#8E24AA",  # rich magenta
+    "baseline":      "#7A1F1F",  # deep maroon
+    "leveled_total": "#2E7D32",  # forest green
 }
 
 plt.rcParams.update({
@@ -45,7 +42,7 @@ plt.rcParams.update({
     "grid.alpha": 0.35,
     "axes.spines.top": False,
     "axes.spines.right": False,
-    "axes.prop_cycle": cycler(color=["#7A1F1F", "#2E7D32", "#6D4C41", "#37474F", "#8E24AA"]),
+    "axes.prop_cycle": cycler(color=[PALETTE["baseline"], PALETTE["leveled_total"]]),
 })
 
 def _fmt_int(x, _):
@@ -70,10 +67,10 @@ def prettify_axes(ax, xlabel=None, ylabel=None, title=None, logy=False):
         ax.yaxis.set_major_formatter(ms_formatter)
     ax.xaxis.set_major_formatter(int_formatter)
 
-def mark_timeout_transition(ax, df, xcol="K", ycol="baseline_query_ms"):
+def mark_timeout_transition(ax, df, xcol="E", ycol="baseline_query_ms"):
     """
-    Mark the LAST finite baseline point with an 'x' and annotate 'TIMEOUT'.
-    (Useful when subsequent baseline entries time out / are NaN.)
+    Mark the LAST finite baseline point with an 'x' and annotate 'TIMEOUT'
+    when subsequent baseline entries time out (NaN).
     """
     if not df[ycol].isna().any():
         return
@@ -82,7 +79,8 @@ def mark_timeout_transition(ax, df, xcol="K", ycol="baseline_query_ms"):
         return
     x = df.loc[last_idx, xcol]
     y = df.loc[last_idx, ycol]
-    ax.scatter([x], [y], marker="x", s=70, linewidths=2, color=PALETTE["baseline"], zorder=5)
+    ax.scatter([x], [y], marker="x", s=70, linewidths=2,
+               color=PALETTE["baseline"], zorder=5)
     ax.annotate("TIMEOUT", xy=(x, y), xytext=(8, 8),
                 textcoords="offset points", ha="left", va="bottom",
                 fontsize=9, weight="bold", color=PALETTE["baseline"])
@@ -94,95 +92,67 @@ def savefig(fig, name: str):
     print(f"Saved: {out}")
 
 # -----------------------------
-# Leveled-graph data (100 accounts) — UPDATED WITH NEW RESULTS
-# Columns: K, orig_create_ms, leveled_build_ms, baseline_query_ms (NaN if timeout), leveled_query_ms
+# Data from your NEW results (|N|=100, repeats=10, timeout=10s)
+# Columns:
+#   E: edge count
+#   baseline_query_ms: average baseline latency (NaN if all runs timed out)
+#   leveled_build_ms: lifted (leveled) build time
+#   leveled_query_ms: average leveled latency
 # -----------------------------
-leveled_rows = [
-    ( 50, 525,  705,   211,   100),
-    ( 75, 289,  391,   173,    87),
-    (100, 133,  490,   316,    90),
-    (125, 146,  325,   444,    64),
-    (150, 137,  996, 43248,   124),
-    (175, 137, 1155,  8953,   111),
-    (200, 299, 1022,    np.nan, 152),
-    (225, 263,  919,    np.nan, 122),
-    (250, 193,  485,    np.nan, 101),
-    (275, 478,  713,    np.nan, 296),
-    (300, 153,  447,    np.nan,  77),
-    (325, 189,  442,    np.nan, 102),
-    (350, 224,  480,    np.nan, 182),
-    (375, 117,  309,    np.nan,  79),
-    (400, 108,  213,    np.nan, 107),
-]
-leveled = pd.DataFrame(leveled_rows, columns=[
-    "K", "orig_create_ms", "leveled_build_ms", "baseline_query_ms", "leveled_query_ms"
-])
+# -----------------------------
+# Data from your NEW results (|N|=100, repeats=10, timeout=10s)
+# Columns:
+#   E: edge count
+#   baseline_query_ms: average baseline latency (NaN if all runs timed out)
+#   leveled_build_ms: lifted (leveled) build time
+#   leveled_query_ms: average leveled latency
+# -----------------------------
+data = {
+    "E": [
+        20, 40, 60, 80, 100, 120, 140, 160,
+        180, 200, 220, 240, 260, 280, 300
+    ],
+    "baseline_query_ms": [
+        9.257, 6.401, 6.904, 8.033, 12.438, 10.477,
+        362.840, 1190.931, np.nan, np.nan, np.nan,
+        np.nan, np.nan, np.nan, np.nan
+    ],
+    "leveled_build_ms": [
+        57.112, 16.689, 11.702, 75.722, 16.374, 20.462,
+        15.435, 15.040, 16.872, 22.990, 28.639,
+        21.115, 80.382, 27.594, 16.282
+    ],
+    "leveled_query_ms": [
+        9.948, 6.123, 6.188, 6.418, 7.611, 6.630,
+        6.845, 6.993, 7.198, 7.149, 10.628,
+        6.911, 7.134, 8.041, 7.808
+    ],
+}
 
-# ---- TOTAL (build + query) for leveled graph ----
-leveled["leveled_total_ms"] = leveled["leveled_build_ms"] + leveled["leveled_query_ms"]
 
-# ---- Speedup using TOTAL (baseline / leveled_total) ----
-leveled["speedup_baseline_over_leveled_total"] = (
-    leveled["baseline_query_ms"] / leveled["leveled_total_ms"]
-)
+df = pd.DataFrame(data)
+df["leveled_total_ms"] = df["leveled_build_ms"] + df["leveled_query_ms"]
 
 # -----------------------------
-# 1) Baseline query vs Leveled TOTAL (log-y)
+# Single figure: Baseline query vs Leveled TOTAL (log-y)
 # -----------------------------
 fig = plt.figure(figsize=(7.4, 5.2))
 ax = plt.gca()
-ax.plot(leveled["K"], leveled["baseline_query_ms"],
+
+ax.plot(df["E"], df["baseline_query_ms"],
         marker="o", linewidth=2.2, label="Baseline query", color=PALETTE["baseline"])
-ax.plot(leveled["K"], leveled["leveled_total_ms"],
-        marker="s", linewidth=2.2, label="Leveled (build + query)", color=PALETTE["leveled"])
-prettify_axes(ax,
-              xlabel="# TRANSFER edges (K)",
-              ylabel="Latency (ms)",
-              title="Baseline Query vs Leveled Graph (build + query)",
-              logy=True)
-mark_timeout_transition(ax, leveled, "K", "baseline_query_ms")
+ax.plot(df["E"], df["leveled_total_ms"],
+        marker="s", linewidth=2.2, label="Leveled (build + query)", color=PALETTE["leveled_total"])
+
+prettify_axes(
+    ax,
+    xlabel="# TRANSFER edges (E)",
+    ylabel="Latency (ms)",
+    title="Baseline Query vs Leveled Graph (build + query)",
+    logy=True,
+)
+mark_timeout_transition(ax, df, "E", "baseline_query_ms")
 ax.legend()
+
 savefig(fig, "leveled_total_vs_baseline.png")
 plt.show()
-
-# -----------------------------
-# 2) Build/Create time vs K
-# -----------------------------
-fig = plt.figure(figsize=(7.4, 5.2))
-ax = plt.gca()
-ax.plot(leveled["K"], leveled["orig_create_ms"],
-        marker="o", linewidth=2.2, label="Original graph create", color=PALETTE["orig_create"])
-ax.plot(leveled["K"], leveled["leveled_build_ms"],
-        marker="s", linewidth=2.2, label="Leveled build", color=PALETTE["leveled_build"])
-prettify_axes(ax,
-              xlabel="# TRANSFER edges (K)",
-              ylabel="Build/Create time (ms)",
-              title="Leveled Graph: Build/Create Time vs K",
-              logy=False)
-ax.legend()
-savefig(fig, "leveled_build_time.png")
-plt.show()
-
-# -----------------------------
-# 3) Speedup vs K (baseline / leveled TOTAL)
-# -----------------------------
-fig = plt.figure(figsize=(7.4, 5.2))
-ax = plt.gca()
-ax.plot(leveled["K"], leveled["speedup_baseline_over_leveled_total"],
-        marker="D", linewidth=2.2, label="Speedup (baseline / leveled TOTAL)", color=PALETTE["speedup"])
-prettify_axes(ax,
-              xlabel="# TRANSFER edges (K)",
-              ylabel="Speedup (×)",
-              title="Speedup vs K (baseline / leveled TOTAL)",
-              logy=False)
-ax.legend()
-savefig(fig, "leveled_speedup.png")
-plt.show()
-
-# -----------------------------
-# Save CSV (includes leveled_total_ms and new speedup)
-# -----------------------------
-leveled.to_csv(OUTDIR / "leveled_results.csv", index=False)
-
-print("\nSaved CSV to:", OUTDIR.resolve())
-print("Files:", sorted(p.name for p in OUTDIR.iterdir()))
