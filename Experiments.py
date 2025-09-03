@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # Example:
-#   python3 experiments.py --password 'ItayBachar88' --setup_timeout 20 --timeout 20 --edges 100 125 150 175 200
-#   python3 experiments.py --password 'ItayBachar88' --setup_timeout 20 --timeout 10 --edges $(seq 20 20 200)
+#   python3 experiments.py --password 'ItayBachar88' --setup_timeout 20 --timeout 10 --edges $(seq 20 20 300)
 
 import argparse
 import csv
@@ -9,7 +8,7 @@ import json
 import sys
 import time
 import multiprocessing
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple
 from pathlib import Path
 import time
 from neo4j import GraphDatabase
@@ -307,9 +306,6 @@ def main():
 
                 # Baseline build (original graph population)
                 "baseline_build_ms": baseline_build_ms,
-                "baseline_build_ms_per_run": json.dumps(
-                    [baseline_build_ms for _ in range(args.repeats)]
-                ),
 
                 # Baseline summary
                 "baseline_timeouts": base_timeouts,
@@ -352,7 +348,7 @@ def main():
     fieldnames = [
         "edges", "runs",
 
-        "baseline_build_ms", "baseline_build_ms_per_run",
+        "baseline_build_ms", 
 
         "baseline_timeouts", "baseline_successes",
         "baseline_avg_latency_ms", "baseline_run_latencies_ms",
