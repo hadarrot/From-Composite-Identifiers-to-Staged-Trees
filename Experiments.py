@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Example:
-#   python3 experiments.py --password 'ItayBachar88' --setup_timeout 20 --timeout 10 --edges $(seq 20 20 300)
+#   python3 experiments.py --password <enter_password> --setup_timeout 20 --timeout 10 --edges $(seq 20 20 300)
 
 import argparse
 import csv
