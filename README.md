@@ -1,12 +1,12 @@
-# From-Composite-Identifiers-to-Staged-Trees
-Neo4j demo for StageLift: compile order guards into the graph to simplify queries and cut latency. Builds a random Accounts+Transfers graph, constructs Stage nodes and TRANSFER_LIFT edges, and compares baseline vs lifted reachability for strictly increasing amounts.
+# From-Composite-Identifiers-to-Leveled-Trees
+Neo4j demo for LevelLift: compile order guards into the graph to simplify queries and cut latency. Builds a random Accounts+Transfers graph, constructs Level nodes and TRANSFER_LIFT edges, and compares baseline vs lifted reachability for strictly increasing amounts.
 
-# StageLift Neo4j Experiment
+# LevelLift Neo4j Experiment
 
-Compile strict-order guards *into* the graph and compare query latency vs. checking them at query time. We build an Accounts+Transfers graph, construct a lifted graph with `Stage(accId, level)` nodes and `TRANSFER_LIFT` edges, then measure baseline vs. lifted reachability for strictly increasing amounts.
+Compile strict-order guards *into* the graph and compare query latency vs. checking them at query time. We build an Accounts+Transfers graph, construct a lifted graph with `Level(accId, level)` nodes and `TRANSFER_LIFT` edges, then measure baseline vs. lifted reachability for strictly increasing amounts.
 
 ## What’s here
-- Cypher to: reset DB, create base graph, build StageLift, and run both queries
+- Cypher to: reset DB, create base graph, build LevelLift, and run both queries
 - A parameter sweep with K ∈ {10, 20, 30} background transfers
 - Preliminary timings and speedups
 
